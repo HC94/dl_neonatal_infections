@@ -1,0 +1,14 @@
+*.dcm
+*.html
+*.npy
+*.pkl
+*.RData
+*.Rhistory
+*.safetensors
+*.zip
+data/
+dataset*
+experiment*
+notebook*
+**/__pycache__/
+__pycache__/
