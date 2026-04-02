@@ -132,14 +132,14 @@ with open('data/data_dict.pickle', 'wb') as f:
 | Body temperature      | Body temperature (°C) |
 | Bradycardia count     | Number of bradycardia episodes |
 | Bradycardia duration  | Duration of bradycardia |
+| Desaturation duration    | Duration of oxygen saturation drops (seconds) |
+| Desaturation event count      | Number of oxygen saturation drops |
+| Event SpO2            | SpO2 event indicator |
 | Heart rate            | Heart rate (beats per minute) |
-| Total incident count  | Count of clinical incidents |
 | Oxygen support level  | Supplemental oxygen flow rate |
 | Respiratory rate      | Breathing rate (breaths per minute) |
-| Desaturation event count      | Number of oxygen saturation drops |
-| Desaturation duration    | Duration of oxygen saturation drops (seconds) |
-| Event SpO2            | SpO2 event indicator |
 | SpO2                  | Oxygen saturation (%) |
+| Total incident count  | Count of clinical incidents |
 
 
 
