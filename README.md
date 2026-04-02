@@ -6,7 +6,7 @@ The preprint is available on **[TBD]**.
 
 ## Authors
 
-**[Author 1]**, **[Author 2]**, **[Author 3]**, **[Author 4]**
+**Ioannis Bouzalas**; **Hung Chu**; **Marit de Vries**; **Machteld van Scherpenzeel - de Vries**; **Tina Faber**; **Frank Verhoog**; **Jiapan Guo**; **Mark-Jan Ploegstra**
 
 ## Abstract
 
@@ -28,11 +28,11 @@ using the **Accelerated Failure Time (AFT)** framework. The model processes both
 
 ## Results
 
-|       **Metric**        | ***Cross-validation (n=284)** | ****Independent test (n=71)** |
+|       **Metric**        | ***Cross-validation (n=274)** | ****Independent test (n=70)** |
 |:-----------------------:|:-----------------------------:|:-----------------------------:|
-|  C-Index <br> [95% CI]  |     0.85 <br> [0.77–0.92]     |     0.83 <br> [0.82–0.85]     |
-|    AUC <br> [95% CI]    |     0.87 <br> [0.79–0.94]     |     0.87 <br> [0.86–0.89]     |
-| IBS <br> [95% CI] |     0.06 <br> [0.04–0.09]     |     0.04 <br> [0.04–0.05]     |
+|  C-Index <br> [95% CI]  |     0.84 <br> [0.76–0.93]     |     0.85 <br> [0.84–0.87]     |
+|    AUC <br> [95% CI]    |     0.88 <br> [0.77–0.98]     |     0.89 <br> [0.87–0.91]     |
+| IBS <br> [95% CI] |     0.07 <br> [0.05–0.10]     |     0.05 <br> [0.04–0.05]     |
 
 **Averaged over 5 folds.* <br>
 ***Bootstrapping with 1,000 samples.*
@@ -120,26 +120,27 @@ with open('data/data_dict.pickle', 'wb') as f:
 |-------------------|-------------|
 | Apgar 1min        | Apgar score at 1 minute after birth |
 | Apgar 5min        | Apgar score at 5 minutes after birth |
-| Birth Length      | Length at birth (cm) |
-| Birth Weight      | Weight at birth (grams) |
-| Cesarean Delivery | Binary indicator for cesarean section |
-| Gestational Age   | Gestational age in days |
+| Birth length      | Length at birth (cm) |
+| Birth weight      | Weight at birth (grams) |
+| Cesarean delivery | Binary indicator for cesarean section |
+| Gestational age   | Gestational age in days |
 
 
 #### Dynamic Variables (time-varying, 11 variables, sorted alphabetically):
-| Variable           | Description |
-|--------------------|-------------|
-| Bradycardia Count  | Number of bradycardia episodes |
-| Bradycardia Rate   | Heart rate during bradycardia |
-| Incident Count     | Count of clinical incidents |
-| O2 Flow            | Supplemental oxygen flow rate |
-| Pulse Rate         | Heart rate (beats per minute) |
-| Respiratory Rate   | Breathing rate (breaths per minute) |
-| SpO2 Drops Count   | Number of oxygen saturation drops |
-| SpO2 Drop Duration | Duration of saturation drops (seconds) |
-| SpO2 Event         | SpO2 event indicator |
-| SpO2               | Oxygen saturation (%) |
-| Temperature        | Body temperature (°C) |
+| Variable              | Description |
+|-----------------------|-------------|
+| Body temperature      | Body temperature (°C) |
+| Bradycardia count     | Number of bradycardia episodes |
+| Bradycardia duration  | Duration of bradycardia |
+| Heart rate            | Heart rate (beats per minute) |
+| Total incident count  | Count of clinical incidents |
+| Oxygen support level  | Supplemental oxygen flow rate |
+| Respiratory rate      | Breathing rate (breaths per minute) |
+| Desaturation event count      | Number of oxygen saturation drops |
+| Desaturation duration    | Duration of oxygen saturation drops (seconds) |
+| Event SpO2            | SpO2 event indicator |
+| SpO2                  | Oxygen saturation (%) |
+
 
 
 ## Installation
@@ -155,7 +156,7 @@ See `requirements.txt` for the complete list of dependencies.
 ### Setup the Environment
 
 ```bash
-git clone https://github.com/HC94/neonatal_infections.git
+git clone https://github.com/HC94/dl_neonatal_infections.git
 cd neonatal_infections
 pip install -r requirements.txt
 ```
