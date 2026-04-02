@@ -118,8 +118,8 @@ with open('data/data_dict.pickle', 'wb') as f:
 #### Static Variables (patient-level, 6 variables, sorted alphabetically):
 | Variable          | Description |
 |-------------------|-------------|
-| Apgar 1min        | Apgar score at 1 minute after birth |
-| Apgar 5min        | Apgar score at 5 minutes after birth |
+| Apgar 1 min        | Apgar score at 1 minute after birth |
+| Apgar 5 min        | Apgar score at 5 minutes after birth |
 | Birth length      | Length at birth (cm) |
 | Birth weight      | Weight at birth (grams) |
 | Cesarean delivery | Binary indicator for cesarean section |
