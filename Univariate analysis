@@ -1,0 +1,240 @@
+"""
+Neonatal Infection Analysis Pipeline
+This script processes dynamic physiological data and static demographic data 
+to generate a univariate statistical comparison between infected and non-infected neonates.
+"""
+
+import pandas as pd
+import numpy as np
+from scipy.stats import mannwhitneyu, chi2_contingency, fisher_exact
+import warnings
+
+# Suppress runtime warnings for empty slices in aggregations
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+
+# ==========================================
+# 1. DATA LOADING
+# ==========================================
+# Assuming data is stored in the same directory or a 'data/' folder
+print("Loading data...")
+df_dynamic = pd.read_csv('df_dynamic.csv')
+
+# If you have your static data (demographics like Weight, Gestational Age), load it here:
+# df_static = pd.read_csv('df_static.csv') 
+
+# ==========================================
+# 2. DATA PREPROCESSING & AGGREGATION
+# ==========================================
+print("Aggregating dynamic physiological data...")
+
+# Derive Infection Status (Assuming 'Final_Result' is the target column in dynamic data)
+def get_infection_status(x):
+    return 'Positive' if 'Positive' in x.values else 'Negative'
+
+infection_status = df_dynamic.groupby('patient_id')['Final_Result'].agg(get_infection_status).reset_index()
+infection_status.rename(columns={'Final_Result': 'Infection_Status'}, inplace=True)
+
+# Calculate Observation Duration
+df_dynamic['TakenInstant'] = pd.to_datetime(df_dynamic['TakenInstant'], errors='coerce')
+obs_duration = df_dynamic.groupby('patient_id')['TakenInstant'].agg(
+    lambda x: (x.max() - x.min()).total_seconds() / 3600
+).reset_index()
+obs_duration.rename(columns={'TakenInstant': 'Observation_Duration_Hours'}, inplace=True)
+
+# Define custom aggregation function for 10th percentile
+def p10(x):
+    return x.quantile(0.10)
+
+# Aggregation dictionary mapping original Dutch columns to metrics
+agg_funcs = {
+    'PULSOXYMETRIE': ['count', 'median', 'std'],
+    'R EVENT SPO2': ['min', p10],
+    'R MCL KL NEO AANTAL SPO2 DALINGEN': ['sum'],
+    'R MCL KL NEO DUUR SATURATIEDALING': ['sum', 'max'],
+    'POLSSLAG': ['count', 'mean', 'std', 'min', 'max'],
+    'R MCL KL NEO LOW FLOW O2': ['max'],
+    'TEMPERATUUR': ['max'],
+    "R MCL KL NEO AANTAL BRADY'S": ['sum'],
+    'R BRADYCARDIA RATE': ['min'],
+    'ADEMHALING': ['mean', 'std', 'max'] 
+}
+
+# Apply aggregation
+dynamic_stats = df_dynamic.groupby('patient_id').agg(agg_funcs)
+# Flatten MultiIndex columns (e.g., 'POLSSLAG', 'mean' -> 'POLSSLAG_mean')
+dynamic_stats.columns = ['_'.join(col).strip() for col in dynamic_stats.columns.values]
+dynamic_stats = dynamic_stats.reset_index()
+
+# Rename columns to English readable names
+rename_map = {
+    'PULSOXYMETRIE_count': 'SpO2_measurements_n',
+    'PULSOXYMETRIE_median': 'SpO2_median',
+    'PULSOXYMETRIE_std': 'SpO2_SD',
+    'R EVENT SPO2_min': 'Event_SpO2_min',
+    'R EVENT SPO2_p10': 'Event_SpO2_p10',
+    'R MCL KL NEO AANTAL SPO2 DALINGEN_sum': 'Desaturation_events_sum',
+    'R MCL KL NEO DUUR SATURATIEDALING_sum': 'Desaturation_duration_total_sum',
+    'R MCL KL NEO DUUR SATURATIEDALING_max': 'Desaturation_duration_max',
+    'POLSSLAG_count': 'HR_measurements_n',
+    'POLSSLAG_mean': 'HR_mean',
+    'POLSSLAG_std': 'HR_SD',
+    'POLSSLAG_min': 'HR_min',
+    'POLSSLAG_max': 'HR_max',
+    'R MCL KL NEO LOW FLOW O2_max': 'Oxygen_max_intensity',
+    'TEMPERATUUR_max': 'Temperature_max',
+    "R MCL KL NEO AANTAL BRADY'S_sum": 'Brady_events_sum',
+    'R BRADYCARDIA RATE_min': 'Brady_rate_min',
+    'ADEMHALING_mean': 'RR_mean',
+    'ADEMHALING_std': 'RR_SD',
+    'ADEMHALING_max': 'RR_max'
+}
+dynamic_stats.rename(columns=rename_map, inplace=True)
+
+# ==========================================
+# 3. MERGING AND FEATURE ENGINEERING
+# ==========================================
+print("Merging datasets and deriving binary variables...")
+
+# Merge everything into a master cohort dataframe
+df_cohort = pd.merge(infection_status, obs_duration, on='patient_id', how='left')
+df_cohort = pd.merge(df_cohort, dynamic_stats, on='patient_id', how='left')
+
+# NOTE: If you have df_static, merge it here:
+# df_cohort = pd.merge(df_cohort, df_static, on='patient_id', how='left')
+
+# Derive binary clinical events
+df_cohort['Any_oxygen_supplementation'] = (df_cohort['Oxygen_max_intensity'].fillna(0) > 0).astype(int)
+df_cohort['Any_fever_38'] = (df_cohort['Temperature_max'].fillna(0) >= 38.0).astype(int)
+df_cohort['Any_desaturation_event'] = (df_cohort['Desaturation_events_sum'].fillna(0) > 0).astype(int)
+df_cohort['Any_bradycardic_event'] = (df_cohort['Brady_events_sum'].fillna(0) > 0).astype(int)
+df_cohort['Any_incident'] = (df_cohort['Any_desaturation_event'] | df_cohort['Any_bradycardic_event']).astype(int)
+
+# Handle nulls for counts/sums
+fill_zeros = ['Desaturation_events_sum', 'Desaturation_duration_total_sum', 
+              'Brady_events_sum', 'SpO2_measurements_n', 'HR_measurements_n', 
+              'Observation_Duration_Hours', 'Oxygen_max_intensity']
+df_cohort[fill_zeros] = df_cohort[fill_zeros].fillna(0)
+
+# ==========================================
+# 4. STATISTICAL ANALYSIS 
+# ==========================================
+print("Running statistical analysis...")
+
+def calc_mannwhitney_effect_size(x, y):
+    """Calculates rank-biserial correlation (r) for Mann-Whitney U test."""
+    n1, n2 = len(x), len(y)
+    if n1 == 0 or n2 == 0: return np.nan
+    u, _ = mannwhitneyu(x, y)
+    mu = n1 * n2 / 2
+    sigma = np.sqrt(n1 * n2 * (n1 + n2 + 1) / 12)
+    z = (u - mu) / sigma
+    return abs(z) / np.sqrt(n1 + n2)
+
+# Define the order of variables for the final table
+target_order = [
+    'Observation_Duration_Hours',
+    'Any_incident', 'Any_desaturation_event', 'Desaturation_events_sum', 
+    'Desaturation_duration_total_sum', 'Event_SpO2_min', 'Event_SpO2_p10', 
+    'Any_bradycardic_event', 'Brady_rate_min',
+    'Any_oxygen_supplementation', 
+    'Any_fever_38', 'Temperature_max',
+    'SpO2_measurements_n', 'SpO2_median', 'SpO2_SD', 
+    'HR_measurements_n', 'HR_mean', 'HR_max', 'HR_min', 'HR_SD', 
+    'RR_mean', 'RR_SD', 'RR_max'
+    # Add 'GestationalAgeDays', 'Gewicht (Gram)', etc., here if static data is merged
+]
+
+# Formatting Labels
+variable_labels = {
+    'Observation_Duration_Hours': 'Observation duration (hours)',
+    'Any_incident': 'Any incident (yes)',
+    'Any_desaturation_event': 'Any desaturation event (yes)',
+    'Desaturation_events_sum': 'Desaturation events (sum)',
+    'Desaturation_duration_total_sum': 'Desaturation duration total (s)',
+    'Event_SpO2_min': 'Event SpO₂ minimum (%)',
+    'Event_SpO2_p10': 'Event SpO₂ p10',
+    'Any_bradycardic_event': 'Any bradycardic event (yes)',
+    'Brady_rate_min': 'Brady rate minimum (bpm)',
+    'Any_oxygen_supplementation': 'Any oxygen supplementation',
+    'Any_fever_38': 'Any fever ≥38°C (yes)',
+    'Temperature_max': 'Temperature max (°C)',
+    'SpO2_measurements_n': 'SpO₂ measurements per patient (n)',
+    'SpO2_median': 'SpO₂ median (%)',
+    'SpO2_SD': 'SpO₂ SD',
+    'HR_measurements_n': 'HR measurements (n)',
+    'HR_mean': 'HR mean',
+    'HR_max': 'HR max',
+    'HR_min': 'HR minimum',
+    'HR_SD': 'HR SD',
+    'RR_mean': 'Respiration mean',
+    'RR_SD': 'Respiration SD',
+    'RR_max': 'Resp. Rate max'
+}
+
+binary_vars = [
+    'Any_oxygen_supplementation', 'Any_fever_38', 'Any_incident',
+    'Any_desaturation_event', 'Any_bradycardic_event', 'Cesarean_Delivery', 'Vaginal_Birth'
+]
+
+rows = []
+for var in target_order:
+    if var not in df_cohort.columns:
+        continue # Skip if static vars are not merged
+        
+    pos_grp = df_cohort[df_cohort['Infection_Status'] == 'Positive'][var].dropna()
+    neg_grp = df_cohort[df_cohort['Infection_Status'] == 'Negative'][var].dropna()
+    
+    if var in binary_vars:
+        # Categorical Statistics
+        n_pos_total = len(df_cohort[df_cohort['Infection_Status'] == 'Positive'])
+        n_neg_total = len(df_cohort[df_cohort['Infection_Status'] == 'Negative'])
+        pos_count = (pos_grp == 1).sum()
+        neg_count = (neg_grp == 1).sum()
+        
+        pos_str = f"{pos_count} ({pos_count/n_pos_total*100:.1f}%)"
+        neg_str = f"{neg_count} ({neg_count/n_neg_total*100:.1f}%)"
+        
+        ct = np.array([[pos_count, n_pos_total - pos_count], [neg_count, n_neg_total - neg_count]])
+        try:
+            if np.min(ct) < 5:
+                _, p = fisher_exact(ct)
+            else:
+                chi2, p, _, _ = chi2_contingency(ct)
+            p_str = f"{p:.3f}" if p >= 0.001 else "<0.001"
+            
+            # Cramer's V
+            chi2_stat, _, _, _ = chi2_contingency(ct)
+            es = np.sqrt(chi2_stat / ct.sum())
+            es_str = f"{es:.2f} (V)"
+        except:
+            p_str, es_str = "N/A", "N/A"
+            
+    else:
+        # Continuous Statistics
+        def fmt(s):
+            return f"{s.median():.1f} [{s.quantile(0.25):.1f}-{s.quantile(0.75):.1f}]"
+        
+        pos_str = fmt(pos_grp) if len(pos_grp) > 0 else "N/A"
+        neg_str = fmt(neg_grp) if len(neg_grp) > 0 else "N/A"
+        
+        try:
+            _, p = mannwhitneyu(pos_grp, neg_grp)
+            p_str = f"{p:.3f}" if p >= 0.001 else "<0.001"
+            r = calc_mannwhitney_effect_size(pos_grp, neg_grp)
+            es_str = f"{r:.2f} (r)"
+        except:
+            p_str, es_str = "N/A", "N/A"
+            
+    rows.append([variable_labels.get(var, var), neg_str, pos_str, p_str, es_str])
+
+# ==========================================
+# 5. OUTPUT RESULTS
+# ==========================================
+results_df = pd.DataFrame(rows, columns=['Characteristic', 'Not infected', 'Infected', 'p-value', 'Effect size'])
+
+print("\n--- Final Results Table ---")
+print(results_df.to_string())
+
+# Save to CSV
+results_df.to_csv('Table_1_Results.csv', index=False)
+print("\nResults saved to 'Table_1_Results.csv'")
